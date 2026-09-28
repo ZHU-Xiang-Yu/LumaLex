@@ -1,0 +1,50 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build Release for iPhone
+        run: |
+          set -o pipefail
+          xcodebuild build -project LumaLex.xcodeproj -scheme LumaLex -configuration Release -destination "generic/platform=iOS" -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | tee build.log
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          app="build/Build/Products/Release-iphoneos/LumaLex.app"
+          test -f "$app/LumaLex"
+          test -d "$app/PlugIns/LumaLexWidgets.appex"
+          mkdir -p output/Payload
+          ditto "$app" output/Payload/LumaLex.app
+          cd output
+          /usr/bin/zip -qry LumaLex-unsigned.ipa Payload
+          /usr/bin/unzip -t LumaLex-unsigned.ipa
+          shasum -a 256 LumaLex-unsigned.ipa > SHA256SUMS.txt
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LumaLex-unsigned-IPA
+          path: |
+            output/LumaLex-unsigned.ipa
+            output/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LumaLex-build-log
+          path: build.log
+          if-no-files-found: ignore
